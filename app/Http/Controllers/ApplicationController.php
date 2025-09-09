@@ -12,6 +12,8 @@ class ApplicationController extends Controller
 {
     /**
      * POST /api/v1/jobs/{job}/apply  (seeker or admin)
+     * - Creates a new application if none exists for (job_id, user_id)
+     * - If one exists, updates cover_letter / resume fields instead of rejecting
      */
     public function store(Request $request, Job $job): JsonResponse
     {
@@ -19,44 +21,56 @@ class ApplicationController extends Controller
         $this->authorize('create', [Application::class, $job]);
 
         $data = $request->validate([
-            'cover_letter' => 'nullable|string',
-            'resume_url'   => 'sometimes|nullable|url|max:255',
-            'resume_path'  => 'sometimes|nullable|string|max:255',
+            'cover_letter' => ['nullable', 'string'],
+            'resume_url'   => ['sometimes', 'nullable', 'url', 'max:255'],
+            'resume_path'  => ['sometimes', 'nullable', 'string', 'max:255'],
+            // optionally allow status override for admins:
+            'status'       => ['sometimes', 'in:pending,reviewed,accepted,rejected'],
         ]);
 
-        // Prevent duplicate application (also enforce via unique index if present)
-        $existing = Application::where('job_id', $job->id)
-            ->where('user_id', $request->user()->id)
-            ->first();
+        $user = $request->user();
 
-        if ($existing) {
-            return response()->json([
-                'message'     => 'You have already applied to this job.',
-                'application' => $existing,
-            ], 200);
+        // Upsert behavior: create if missing, else update fields provided
+        $app = Application::firstOrNew([
+            'job_id'  => $job->id,
+            'user_id' => $user->id,
+        ]);
+
+        $wasNew = !$app->exists;
+
+        // Fill only provided fields; keep previous values when updating
+        if (array_key_exists('cover_letter', $data)) {
+            $app->cover_letter = $data['cover_letter'];
+        }
+        if (array_key_exists('resume_url', $data)) {
+            $app->resume_url = $data['resume_url'];
+        }
+        if (array_key_exists('resume_path', $data)) {
+            $app->resume_path = $data['resume_path'];
         }
 
-        $app = Application::create([
-            'job_id'       => $job->id,
-            'user_id'      => $request->user()->id,
-            'cover_letter' => $data['cover_letter'] ?? null,
-            'resume_url'   => $data['resume_url'] ?? null,
-            'resume_path'  => $data['resume_path'] ?? null,
-            'status'       => 'pending',
-        ]);
+        if ($wasNew) {
+            $app->status = $data['status'] ?? 'pending';
+        } elseif (array_key_exists('status', $data)) {
+            $app->status = $data['status']; // allow controlled updates
+        }
 
-        // Notify employer
-        $job->loadMissing('employer');
-        if ($job->employer) {
-            $job->employer->notify(
-                new NewJobApplication($job, $request->user(), $data['cover_letter'] ?? null)
-            );
+        $app->save();
+
+        // Notify employer only on first-time submission
+        if ($wasNew) {
+            $job->loadMissing('employer');
+            if ($job->employer) {
+                $job->employer->notify(
+                    new NewJobApplication($job, $user, $app->cover_letter)
+                );
+            }
         }
 
         return response()->json([
-            'message'     => 'Application submitted.',
-            'application' => $app,
-        ], 201);
+            'message'     => $wasNew ? 'Application submitted.' : 'Application updated.',
+            'application' => $app->fresh(),
+        ], $wasNew ? 201 : 200);
     }
 
     /**

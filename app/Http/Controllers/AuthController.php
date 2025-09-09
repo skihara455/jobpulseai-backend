@@ -6,8 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
-use Laravel\Sanctum\PersonalAccessToken; // for safe logout checks
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -27,9 +26,9 @@ class AuthController extends Controller
         $user = User::create([
             'name'     => $data['name'],
             'email'    => $data['email'],
-            'password' => Hash::make($data['password']),
+            'password' => Hash::make($data['password']), // ok even with casts
             'role_id'  => $data['role_id'],
-        ]);
+        ])->load('role');
 
         return response()->json([
             'success' => true,
@@ -52,12 +51,17 @@ class AuthController extends Controller
         $user = User::where('email', $data['email'])->first();
 
         if (!$user || !Hash::check($data['password'], $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
-            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid credentials.',
+            ], 401);
         }
 
+        // Optional: single-session style—clear old tokens
+        $user->tokens()->delete();
+
         $token = $user->createToken('auth-token')->plainTextToken;
+        $user->load('role');
 
         return response()->json([
             'success'    => true,
@@ -70,44 +74,33 @@ class AuthController extends Controller
     }
 
     /**
-     * POST /api/v1/auth/logout
+     * POST /api/v1/auth/logout (auth:sanctum)
      * Header: Authorization: Bearer <token>
-     * Handles PersonalAccessToken (Bearer) and TransientToken (cookie) safely.
      */
     public function logout(Request $request): JsonResponse
     {
         $user = $request->user();
-
         if (!$user) {
-            return response()->json([
-                'success' => true,
-                'message' => 'No active session.',
-            ]);
+            return response()->json(['success' => true, 'message' => 'No active session.']);
         }
 
         $currentToken = $user->currentAccessToken();
-
         if ($currentToken instanceof PersonalAccessToken) {
-            // Revoke only this token (Bearer token case)
-            $user->tokens()->where('id', $currentToken->id)->delete();
+            $user->tokens()->where('id', $currentToken->id)->delete(); // revoke only this token
         } else {
-            // Cookie (TransientToken) case — revoke all personal tokens
-            $user->tokens()->delete();
+            $user->tokens()->delete(); // cookie/transient case
         }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Logged out successfully.',
-        ]);
+        return response()->json(['success' => true, 'message' => 'Logged out successfully.']);
     }
 
     /**
-     * GET /api/v1/auth/me
+     * GET /api/v1/auth/me (auth:sanctum)
      * Header: Authorization: Bearer <token>
      */
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user();
+        $user = $request->user()->load('role');
 
         return response()->json([
             'success'   => true,

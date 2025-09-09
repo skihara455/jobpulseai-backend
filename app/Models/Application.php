@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Application extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'job_id',
         'user_id',
@@ -15,11 +18,11 @@ class Application extends Model
 
     public function job()
     {
-        return $this->belongsTo(Job::class, 'job_id');
+        return $this->belongsTo(Job::class);
     }
 
     public function user()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class);
     }
 }

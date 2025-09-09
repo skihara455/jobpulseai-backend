@@ -2,18 +2,17 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Laravel CORS Configuration
-    |--------------------------------------------------------------------------
-    | This config controls which frontends are allowed to call your API.
-    */
-
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [env('FRONTEND_URL', 'http://localhost:5173')],
+    // Allow Vite dev servers on 5173/5174 (localhost & 127.0.0.1)
+    'allowed_origins' => [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:5174',
+        'http://127.0.0.1:5174',
+    ],
 
     'allowed_origins_patterns' => [],
 
@@ -23,6 +22,6 @@ return [
 
     'max_age' => 0,
 
-    // Since we use Bearer tokens (Sanctum personal access tokens), keep false
+    // Using Bearer tokens (not cookies)
     'supports_credentials' => false,
 ];
