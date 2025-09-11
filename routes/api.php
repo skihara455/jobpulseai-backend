@@ -2,103 +2,49 @@
 
 use Illuminate\Support\Facades\Route;
 
-// Core controllers
+// Controllers (import all you use here)
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\RoleController;
-use App\Http\Controllers\JobController;
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\SavedJobController;
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\MentorController;
-use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\UploadController;
-use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\ToolsController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\MentorController;
+use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\UploadController;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes (v1)
-|--------------------------------------------------------------------------
-| - Public routes are readable by anyone.
-| - Protected routes require a valid Sanctum token (Bearer ...).
-| - All v1 routes are rate-limited with throttle:api.
-| - A JSON 404 fallback ensures the API never returns HTML by mistake.
-*/
+Route::prefix('v1')->group(function () {
+    /**
+     * -------------------------
+     * Public (no auth required)
+     * -------------------------
+     * Keep /auth/login & /auth/register OUTSIDE auth:sanctum,
+     * or you'll get 401 when trying to log in.
+     */
+    Route::prefix('auth')->group(function () {
+        Route::post('login',    [AuthController::class, 'login'])->name('auth.login');
+        Route::post('register', [AuthController::class, 'register'])->name('auth.register');
+    });
 
-Route::prefix('v1')->middleware('throttle:api')->group(function () {
-    // -------- Preflight (CORS) --------
-    // Prevent 405s for OPTIONS requests from the frontend (CORS preflight)
-    Route::options('{any}', fn () => response()->noContent())
-        ->where('any', '.*')
-        ->name('preflight');
+    // (Optional) Public browse endpoints go here (jobs index/show, etc.)
+    // Route::get('jobs', [JobController::class, 'index']);
+    // Route::get('jobs/{job}', [JobController::class, 'show']);
 
-    // -------- Health (for demos & monitoring) --------
-    Route::get('health', fn () => response()->json([
-        'app'    => config('app.name'),
-        'status' => 'OK',
-        'time'   => now()->toIso8601String(),
-    ]))->name('health');
+    /**
+     * -------------------------
+     * Protected (auth required)
+     * -------------------------
+     */
+    Route::middleware('auth:sanctum')->group(function () {
 
-    // -------- Debug (helps verify your Authorization header arrives) --------
-    Route::get('debug/echo-auth', function (\Illuminate\Http\Request $r) {
-        return response()->json([
-            'authorization' => $r->header('Authorization'),
-            'accept'        => $r->header('Accept'),
-        ]);
-    })->name('debug.echo-auth');
+        // Authenticated user info & logout
+        Route::prefix('auth')->group(function () {
+            Route::get('me',     [AuthController::class, 'me'])->name('auth.me');
+            Route::post('logout',[AuthController::class, 'logout'])->name('auth.logout');
+        });
 
-    // -------- Public Auth --------
-    Route::post('auth/register', [AuthController::class, 'register'])->name('auth.register');
-    Route::post('auth/login',    [AuthController::class, 'login'])->name('auth.login');
-
-    // -------- Public Roles --------
-    Route::get('roles', [RoleController::class, 'fetchRoles'])->name('roles.index');
-
-    // -------- Public Jobs (read) --------
-    Route::get('jobs',       [JobController::class, 'index'])->name('jobs.index');
-    Route::get('jobs/{job}', [JobController::class, 'show'])->name('jobs.show');
-
-    // -------- Mentors (public read) --------
-    Route::get('mentors',          [MentorController::class, 'index'])->name('mentors.index');
-    Route::get('mentors/{mentor}', [MentorController::class, 'show'])->name('mentors.show');
-
-    // -------- Companies (public read) --------
-    Route::get('companies',           [CompanyController::class, 'index'])->name('companies.index');
-    Route::get('companies/{company}', [CompanyController::class, 'show'])->name('companies.show');
-
-    // -------- Protected (requires Sanctum token) --------
-    Route::middleware(['auth:sanctum'])->group(function () {
-        // Auth
-        Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
-        Route::get('auth/me',      [AuthController::class, 'me'])->name('auth.me');
-
-        // Profile
-        Route::get('profile', [ProfileController::class, 'show'])->name('profile.show');   // alias to /auth/me w/ extras
-        Route::put('profile', [ProfileController::class, 'update'])->name('profile.update');
-
-        // Uploads (avatar & resume)
-        Route::post('profile/avatar',   [UploadController::class, 'uploadAvatar'])->name('profile.avatar.upload');
-        Route::delete('profile/avatar', [UploadController::class, 'deleteAvatar'])->name('profile.avatar.delete');
-        Route::post('profile/resume',   [UploadController::class, 'uploadResume'])->name('profile.resume.upload');
-        Route::delete('profile/resume', [UploadController::class, 'deleteResume'])->name('profile.resume.delete');
-
-        // Dashboard
-        Route::get('dashboard/summary', [DashboardController::class, 'summary'])->name('dashboard.summary');
-
-        // Roles (admin-only via policy)
-        Route::post('roles',          [RoleController::class, 'saveRole'])->name('roles.store');
-        Route::get('roles/{role}',    [RoleController::class, 'fetchRole'])->name('roles.show');
-        Route::put('roles/{role}',    [RoleController::class, 'updateRole'])->name('roles.update');
-        Route::delete('roles/{role}', [RoleController::class, 'deleteRole'])->name('roles.destroy');
-
-        // Jobs (write: employer or admin; update/delete: owner or admin)
-        Route::post('jobs',         [JobController::class, 'store'])->name('jobs.store');
-        Route::put('jobs/{job}',    [JobController::class, 'update'])->name('jobs.update');
-        Route::delete('jobs/{job}', [JobController::class, 'destroy'])->name('jobs.destroy');
+        // ----- YOUR ROUTES (from your snippet) -----
 
         // Applications
-        Route::post('jobs/{job}/apply',       [ApplicationController::class, 'store'])->name('applications.store');
         Route::get('applications',            [ApplicationController::class, 'myApplications'])->name('applications.mine');
         Route::get('jobs/{job}/applications', [ApplicationController::class, 'jobApplications'])->name('applications.byJob');
 
@@ -135,7 +81,10 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
     });
 });
 
-// -------- JSON 404 fallback for any unmatched API route --------
+/**
+ * JSON 404 fallback for any unmatched API route.
+ * Note: api.php routes are automatically under /api, so the final path is /api/...
+ */
 Route::fallback(function () {
     return response()->json([
         'error' => [

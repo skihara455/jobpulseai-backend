@@ -3,98 +3,61 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+
 use App\Models\Role;
 use App\Models\User;
-use App\Models\Company;
-use App\Models\Job;
-use App\Models\Mentor;
-use App\Models\Application;
 
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1) Ensure roles exist
-        $roles = [
-            ['name' => 'admin',    'description' => 'Platform administrator'],
-            ['name' => 'employer', 'description' => 'Company or recruiter posting jobs'],
-            ['name' => 'seeker',   'description' => 'Job seeker / candidate'],
-            ['name' => 'mentor',   'description' => 'Mentor providing guidance'],
-        ];
-        foreach ($roles as $r) {
-            Role::firstOrCreate(['name' => $r['name']], $r);
-        }
+        DB::transaction(function () {
+            /* ---------------- 1) Roles ---------------- */
+            $roles = [
+                ['name' => 'user',     'description' => 'General application user'],
+                ['name' => 'employer', 'description' => 'Company or recruiter posting jobs'],
+            ];
 
-        // Grab role IDs for later use
-        $roleIds = Role::pluck('id', 'name');
+            foreach ($roles as $r) {
+                Role::updateOrCreate(
+                    ['name' => Str::lower($r['name'])],
+                    ['description' => $r['description']]
+                );
+            }
 
-        // 2) Create known users (with fixed logins for testing)
-        $admin = User::firstOrCreate(
-            ['email' => 'admin@example.com'],
-            [
-                'name' => 'Admin',
-                'password' => Hash::make('Password123!'),
-                'role_id' => $roleIds['admin'] ?? null,
-            ]
-        );
+            $roleIds = Role::pluck('id', 'name')->mapWithKeys(fn($id, $name) => [Str::lower($name) => $id]);
 
-        $employer = User::firstOrCreate(
-            ['email' => 'employer@example.com'],
-            [
-                'name' => 'Employer One',
-                'password' => Hash::make('Password123!'),
-                'role_id' => $roleIds['employer'] ?? null,
-            ]
-        );
+            /* ---------------- 2) Users ---------------- */
+            $userEmail = Str::lower('skihara479@gmail.com');
+            $employerEmail = Str::lower('skihara455@gmail.com');
 
-        $seeker = User::firstOrCreate(
-            ['email' => 'seeker@example.com'],
-            [
-                'name' => 'Seeker One',
-                'password' => Hash::make('Password123!'),
-                'role_id' => $roleIds['seeker'] ?? null,
-            ]
-        );
-
-        // 3) Extra seekers
-        User::factory()->count(5)->create(['role_id' => $roleIds['seeker'] ?? null]);
-
-        // 4) Company for the employer
-        $company = Company::firstOrCreate(
-            ['name' => 'JobPulseAI Inc.'],
-            [
-                'owner_id' => $employer->id,
-                'website' => 'https://example.com',
-                'location' => 'Nairobi',
-                'industry' => 'Tech',
-                'size' => '11-50',
-                'description' => 'AI-powered job matching at scale.',
-                'logo_url' => 'https://picsum.photos/seed/jobpulseai/200/200',
-            ]
-        );
-
-        // 5) Mentors
-        Mentor::factory()->count(6)->create();
-
-        // 6) Jobs: a mix of random + tied to employer/company
-        Job::factory()->count(8)->create(); // random jobs
-        Job::factory()->count(3)->create([
-            'employer_id' => $employer->id,
-            'company_id'  => $company->id,
-            'status'      => 'open',
-        ]);
-
-        // 7) Applications: seeker applies to first few open jobs
-        $openJobs = Job::where('status', 'open')->take(3)->get();
-        foreach ($openJobs as $oj) {
-            Application::firstOrCreate(
-                ['job_id' => $oj->id, 'user_id' => $seeker->id],
+            User::updateOrCreate(
+                ['email' => $userEmail],
                 [
-                    'cover_letter' => 'Excited to apply to this role!',
-                    'status' => 'pending',
+                    'name'     => 'Samuel Kihara (User)',
+                    'password' => Hash::make('Samuel@123'),
+                    'role_id'  => $roleIds['user'] ?? null,
                 ]
             );
-        }
+
+            User::updateOrCreate(
+                ['email' => $employerEmail],
+                [
+                    'name'     => 'Samuel Kihara (Employer)',
+                    'password' => Hash::make('Samuel@234'),
+                    'role_id'  => $roleIds['employer'] ?? null,
+                ]
+            );
+
+            /* ---------------- 3) Console hint ---------------- */
+            if (app()->runningInConsole()) {
+                $this->command->info('Seed complete. Test logins:');
+                $this->command->line("  User:     {$userEmail} / Samuel@123");
+                $this->command->line("  Employer: {$employerEmail} / Samuel@234");
+            }
+        });
     }
 }

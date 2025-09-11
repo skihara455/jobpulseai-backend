@@ -8,10 +8,16 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Str;
 
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
+
+    /**
+     * Eager-load to avoid N+1 and ensure role accessors work consistently.
+     */
+    protected $with = ['role'];
 
     /**
      * Mass assignable fields
@@ -32,7 +38,7 @@ class User extends Authenticatable
     ];
 
     /**
-     * Attribute casts (Laravel 12 supports the method-based casts)
+     * Attribute casts
      */
     protected function casts(): array
     {
@@ -42,11 +48,20 @@ class User extends Authenticatable
         ];
     }
 
+    /* ----------------- Mutators / Normalizers ----------------- */
+
+    /**
+     * Normalize email (trim + lowercase) to make login non–case-sensitive.
+     */
+    public function setEmailAttribute($value): void
+    {
+        $this->attributes['email'] = Str::of($value)->trim()->lower();
+    }
+
     /* ----------------- Relationships ----------------- */
 
     public function role(): BelongsTo
     {
-        // resolves to App\Models\Role::class
         return $this->belongsTo(Role::class);
     }
 
@@ -61,13 +76,35 @@ class User extends Authenticatable
 
     /* ----------------- Role helpers ------------------ */
 
-    public function isAdmin(): bool    { return $this->role?->name === 'admin'; }
-    public function isEmployer(): bool { return $this->role?->name === 'employer'; }
-    public function isSeeker(): bool   { return $this->role?->name === 'seeker'; }
-    public function isMentor(): bool   { return $this->role?->name === 'mentor'; }
+    protected function roleNameValue(): ?string
+    {
+        $name = $this->role->name ?? null;
+        return $name ? Str::of($name)->lower()->toString() : null;
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->roleNameValue() === 'admin';
+    }
+
+    public function isEmployer(): bool
+    {
+        return $this->roleNameValue() === 'employer';
+    }
+
+    public function isSeeker(): bool
+    {
+        return $this->roleNameValue() === 'seeker';
+    }
+
+    public function isMentor(): bool
+    {
+        return $this->roleNameValue() === 'mentor';
+    }
 
     /**
-     * Programmatic ability map (handy in policies/resources)
+     * Boolean flags the frontend can use for quick gating.
+     * (Separate from Sanctum token abilities.)
      */
     public function abilities(): array
     {
@@ -85,7 +122,8 @@ class User extends Authenticatable
 
     public function getRoleNameAttribute(): ?string
     {
-        return $this->role->name ?? null; // ensure queries eager-load 'role' when listing users
+        // Keep original case if present, else null
+        return $this->role->name ?? null;
     }
 
     public function getAbilitiesAttribute(): array
